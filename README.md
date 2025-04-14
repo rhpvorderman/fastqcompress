@@ -202,17 +202,23 @@ that the bzip2 result using the transformation is the best. It is just 2.67%
 larger than the absolute minimum of 152500 bytes that we can obtain if we had
 used a dedicated system that just stored the 122 bits that mattered.
 
+The tokeniser in CRAM does not perform well on the same data. It
+compresses it to 242453 bits that do not compress well using gzip, bzip2 or xz.
+
 ### Illumina results
 
 ``` 
-original length          926697
-gzipped original         101515
-gzipped transformed      63974
-bzipped original         85170
-bzipped transformed      56221
-lzma original            53932
-lzma transformed         54796
+original length          384576
+gzipped original         59444
+gzipped transformed      46675
+bzipped original         47164
+bzipped transformed      43690
+lzma original            39748
+lzma transformed         40260
 ```
 The transformation has significant improvements, except for lzma, which is 
-apparently able to handle the pattern. These results are however only intesting
-when compared to the CRAM tokenizer. To be continued...
+apparently able to handle the pattern.
+
+The CRAM tokenizer is however much more effective getting it down to 
+23080 bytes. This is due to the variable length of some of the fields which
+messes up the repitition. The tokenizer handles this much better.
