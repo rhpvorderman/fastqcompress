@@ -167,3 +167,52 @@ the maximum length and simply add null bytes to as padding to shorter sequences.
 If we have 10000 names, with almost all having a length of 50 and one of 
 length 60, this means 10 columns of 9999 zeroes and one distinct character 
 are formed. These are very easy to compress.
+
+## Name transformation compression results
+
+For the comparison we use [idcompression.py](./idcompression.py). 
+
+### Nanopore UUID4 ID compression
+
+A [UUID4](https://en.wikipedia.org/wiki/Universally_unique_identifier#Version_4_(random)) 
+entry is a 36-byte string that looks like this:
+
+``` 
+xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
+```
+M is the version field, so it is always a `4`. The `N`'s upper two or three bits
+encode the variant. Most UUID4s are variant 1 so that is two bits. 
+The `x` are all hexadecimal numbers. So these encode for 4 bits.
+The number of random bits in a UUID (assuming variant 1) is 122. This is
+15.25 bytes. It takes 36 bytes to spell it out, so the theoretical best
+compression removing all redundancy is 15.25 / 36 = 42.36%.
+
+The results on 10 000 UUIDs:
+``` 
+original length          360000
+gzipped original         204918
+gzipped transformed      177194
+bzipped original         183326
+bzipped transformed      156585
+lzma original            178036
+lzma transformed         159816
+```
+The original is simply all the UUIDs together back to back. It turns out 
+that the bzip2 result using the transformation is the best. It is just 2.67%
+larger than the absolute minimum of 152500 bytes that we can obtain if we had
+used a dedicated system that just stored the 122 bits that mattered.
+
+### Illumina results
+
+``` 
+original length          926697
+gzipped original         101515
+gzipped transformed      63974
+bzipped original         85170
+bzipped transformed      56221
+lzma original            53932
+lzma transformed         54796
+```
+The transformation has significant improvements, except for lzma, which is 
+apparently able to handle the pattern. These results are however only intesting
+when compared to the CRAM tokenizer. To be continued...
