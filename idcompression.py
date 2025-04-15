@@ -30,28 +30,34 @@ class EncodedNames:
     def raw_data(self):
         return self.data.encode('ascii')
 
-class EncodedColumns:
+class EncodedColumns(EncodedNames):
     column_data: List[EncodedNames]
 
     def __init__(self, names: Sequence[str]):
         self.number_of_names = len(names)
-        column_lists = []
-        for i, name in enumerate(names):
+        column_maxes = []
+        for name in names:
             columns = name.split(":")
-            if len(columns) > len(column_lists):
-                to_be_added = len(columns) - len(column_lists)
-                for _ in range(to_be_added):
-                    column_lists.append(["" for _ in range(len(names))])
-            for j, column in enumerate(columns):
-                column_lists[j][i] = column
-        self.column_data = [EncodedNames(column) for column in column_lists]
+            if len(columns) > len(column_maxes):
+                column_maxes.extend([0 for _ in range(len(columns) - len(column_maxes))])
+            for i, column in enumerate(columns):
+                column_maxes[i] = max(len(column), column_maxes[i])
+        new_names = []
+        for name in names:
+            columns = name.split(":")
+            for i, column in enumerate(columns):
+                columns[i] = column.ljust(column_maxes[i], "\00")
+            new_names.append(":".join(columns))
+        super().__init__(new_names)
 
     def decode(self):
-        decoded_columns = [column.decode() for column in self.column_data]
-        return [":".join(row) for row in zip(*decoded_columns)]
-
-    def raw_data(self):
-        return b"".join(c.raw_data() for c in self.column_data)
+        decoded_data = super().decode()
+        answer_names = []
+        for name in decoded_data:
+            answer_names.append(
+                ":".join(column.rstrip("\00") for column in name.split(":"))
+            )
+        return answer_names
 
 
 def main():
