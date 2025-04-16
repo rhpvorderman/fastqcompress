@@ -289,3 +289,8 @@ Result:
 ```
 So definitely not as good as FQZComp, but we have not compressed the data yet.
 Maybe the data is more compressible in this representation?
+
+Tried it [in C](./diffcompress.c) and this does not work as well as planned. 
+The output size is roughly as predicted, but hardly compressible at all. 
+There are probably bugs in the implementation, but it is not worth pursuing it
+further.
