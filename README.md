@@ -57,24 +57,6 @@ Using the reference/assembly to compress your original data is by far the
 best way of doing it. For unaligned sequences some interesting tricks might
 be possible.
 
-## Compressing qualities
-CRAM uses the FQZComp. This codec uses some clever tricks and seems very good. 
-Illumina qualities however, have only four distinct qualities, 2, 11, 22 and 37.
-So technically these can be encoded using a twobit codec and a lookup table. 
-The resulting twobit array should be easy to compress using a generic 
-compression algorithm.
-
-A quick look at pacbio data shows only 7 distinct quality values. This can 
-be encoded in 3-bit. 
-
-It will be interesting to explore whether using bit encoding yields better 
-results than FQZComp (probably not), and whether FQZcomp can be improved using
-these insights.
-
-With ONT data there are 50 or more (!) distinct quality values. Using 6-bit 
-encoding is an option. But the large distinctiveness is going to make this
-data harder to compress.
-
 ## Compressing identifiers
 CRAM tokenizes the name and stores the data in column format. This will 
 work well for UUID names as these contain a few dashes at fixed intervals. 
@@ -222,3 +204,55 @@ apparently able to handle the pattern.
 The CRAM tokenizer is however much more effective getting it down to 
 23080 bytes. This is due to the variable length of some of the fields which
 messes up the repitition. The tokenizer handles this much better.
+
+### Htscodecs discussion
+
+I discussed this with JK Bonfield, the CRAM maintainer, and he showed that
+the rANS4x16 can do striping and bitpacking. The striping feature is basically
+doing the above transformation. As a result the rANS4x16 encoder can basically
+process the UUID as four streams of only dashes one stream of only a 4, one
+stream of only 8,9,A,B values (2 bits of info) and 30 streams of hexadecimals
+(4bits of info). It can automatically convert those and get very close to 
+only 122 bits needed per UUID.
+
+So this can improve CRAM without adding additional codecs.
+
+## Compressing qualities
+CRAM uses the FQZComp. This codec uses some clever tricks and seems very good. 
+
+ONT CRAM files however are unseemingly big. Most of this data is in qualities.
+Let's see what kind of tricks can be leveraged.
+
+I used a set from the s3://ont-open-data archive:
+
+```commandline
+aws s3 cp --no-sign-request s3://ont-open-data/giab_2025.01/analysis/wf-human-variation/hac/HG002/PAW70337/output/SAMPLE.haplotagged.cram HG002.cram
+samtools view HG002.cram | cut -f 11 | head -n 100 > 100nanoporequals.txt
+```
+
+Let's do some investigations.
+```
+$ python3 -c "data = open('100nanoporequals.txt').read();print(set(data));print(len(set(data)))"
+{'I', 'F', ',', '3', '8', '+', '5', '"', '@', '1', 'R', 'N', ':', '<', '?', '&', 'L', 'K', 'Q', '>', 'P', '.', '*', 'S', 'G', '6', 'A', '4', '(', '/', '$', 'H', 'E', "'", '\n', 'M', 'O', '7', '2', ';', '%', 'B', '-', '9', 'D', '#', 'C', 'J', '0', ')', '='}
+51
+```
+51 distinct characters (including newlines) so 50 distinct phreds. That requires
+5.6439 bits to encode so the ratio should be 70%ish if the data is truly random.
+
+``` 
+$ wc -c 100nanoporequals.txt 
+3124721 100nanoporequals.txt
+$ gzip -c 100nanoporequals.txt | wc -c
+1917880
+$ bzip2 -c 100nanoporequals.txt | wc -c
+1751296
+$ xz -c 100nanoporequals.txt | wc -c
+1769008
+$ ~/projects/htscodecs/tests/fqzcomp_qual 100nanoporequals.txt | wc -c
+nlines=100
+Total output = 1708902
+1708902
+```
+So the fqzcomp codec is clearly the best, beating bzip2 slightly.
+
+Is it possible to do better?
