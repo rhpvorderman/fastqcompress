@@ -253,6 +253,39 @@ nlines=100
 Total output = 1708902
 1708902
 ```
-So the fqzcomp codec is clearly the best, beating bzip2 slightly.
+So the fqzcomp codec is clearly the best, beating bzip2 slightly. It compresses
+data to 54.7%. Not too shabby.
 
-Is it possible to do better?
+Is it possible to do better? 
+Having a look at the phred scores
+
+Code [here](./qual_score_counter.py). The frequencies do not suggest very 
+compressible data, which is what we see in practice.
+
+So given the ONT jitter, values hover around a certain point. What if we 
+use the differences between phreds. Will that yield more compressible data?
+
+Code [here](./qual_diff_encoder.py), answer: no.
+
+What if we take a fixed point and only encode differences from that point
+onwards. If we have a range (min, max) where min and max are at most
+15 units apart, the differences can be stored 4-bit in the range.
+
+Since phred values are ASCII they only use 7 bits. When the signal is 
+erratic and the differences are great, the phreds can be stored verbatim.
+When there are small differences, a range can be determined to encode. 
+The range starts with the minimum value in the least significant bits 
+and has the most significant bit set to signify that the encoding starts. 
+The following single byte value indicates the length of the encoded stretch
+from 1 to 256. (Stored as length - 1). Then follows the 4-bit offsets from
+the minimum in a range of 0 to 15. 
+
+Using the code [here](./qual_range_finder.py) we can check beforehand if this
+idea has some merit.
+```
+Result: 
+3124721
+2078701
+```
+So definitely not as good as FQZComp, but we have not compressed the data yet.
+Maybe the data is more compressible in this representation?
