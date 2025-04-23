@@ -364,7 +364,7 @@ $ ./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt | wc -c
 $ ./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt.sorted | wc -c
 30979
 ```
-Oh dear, a less than 8K saving and we use 10K indexes...
+Oh dear, a less than 8K saving and we use 10K worth of indexes...
 ```
 $ gzip -c 10000_illumina_ids.txt.sorted.indexes | wc -c
 10061
@@ -375,3 +375,29 @@ $ xz -c 10000_illumina_ids.txt.sorted.indexes | wc -c
 ```
 This is as expected as all 8 bits are used. The data is random and as a result
 can't be compressed.
+
+### Going further down the rabbit hole
+
+Will it help when using more sequences in a block? Answer: no.
+
+``` 
+$ ./reversible_sort.py sort -t 'I' 100_000_illumina_ids.txt
+$ wc -c 100_000_illumina_ids.txt*
+3849317 100_000_illumina_ids.txt
+3849317 100_000_illumina_ids.txt.sorted
+ 400000 100_000_illumina_ids.txt.sorted.indexes
+8098634 totaal
+$ ./htscodecs/tests/tokenise_name3 100_000_illumina_ids.txt | wc -c
+381848
+$ ./htscodecs/tests/tokenise_name3 100_000_illumina_ids.txt.sorted | wc -c
+193296
+$ gzip -c 100_000_illumina_ids.txt.sorted.indexes | wc -c
+275896
+$ bzip2 -c 100_000_illumina_ids.txt.sorted.indexes | wc -c
+201957
+$ xz -c 100_000_illumina_ids.txt.sorted.indexes | wc -c
+224380
+```
+The randomness that is removed by sorting ends up in the indexes file. And this
+file's compressed size is slightly larger than the savings.
+How unfortunate!
