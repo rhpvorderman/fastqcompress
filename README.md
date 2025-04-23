@@ -343,3 +343,35 @@ numbers that is 13.28 bits. We use 16 so optimal compression is 13.28/16 * 20 00
 
 22902 + 16729 = 39631. 800 bytes worse than not using this technique. (Insert
 Star Wars NOOOO here).
+
+### Going down the rabbit hole
+
+So what if we just use 1 byte. And we sort in blocks of 256? Will that 
+improve things? (My guess, no, but let's try it anyway otherwise I will not
+be able to sleep tonight.) 
+
+Using [this script](./block_sort.py) we save the file in blocks of 256 units
+with corresponding indices.
+
+``` 
+$ wc -c 10000_illumina_ids.txt*
+384888 10000_illumina_ids.txt
+384888 10000_illumina_ids.txt.sorted
+ 10000 10000_illumina_ids.txt.sorted.indexes
+779776 totaal
+$ ./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt | wc -c
+38846
+$ ./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt.sorted | wc -c
+30979
+```
+Oh dear, a less than 8K saving and we use 10K indexes...
+```
+$ gzip -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+10061
+$ bzip2 -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+10472
+$ xz -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+10060
+```
+This is as expected as all 8 bits are used. The data is random and as a result
+can't be compressed.
