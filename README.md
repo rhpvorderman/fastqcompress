@@ -294,3 +294,52 @@ Tried it [in C](./diffcompress.c) and this does not work as well as planned.
 The output size is roughly as predicted, but hardly compressible at all. 
 There are probably bugs in the implementation, but it is not worth pursuing it
 further.
+
+## Data sorting/unsorting for names
+
+CRAM takes advantage of the mapping to compress sequences. For BAM position
+sorted data compresses much better due to the similarities between the reads.
+
+Name compression works better on name-sorted data. But it suffers on position
+sorted data. However, given CRAM's block format we can store multiple sequences
+at once. Typically 10 000. This means the names can be sorted in the block, 
+with an array of 16-bit integers being kept for the sort position to unscramble
+the block. 
+
+To get the illumina names we use the following file:
+https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_Stanford_Illumina_6kb_matepair/bams/GRCh38/HG002.sorted.bam
+
+This is position sorted. We can simply take the first 10 000 names. Stored
+[here](./10000_illumina_ids.txt).
+
+This follows the names as [specified by illumina](https://support.illumina.com/help/BaseSpace_Sequence_Hub_OLH_009008_2/Source/Informatics/BS/FileFormat_FASTQ-files_swBS.htm).
+
+Let's do some sorting using [this script](./reversible_sort.py)
+
+```
+$ ./reversible_sort.py sort 10000_illumina_ids.txt
+$ wc -c 10000_illumina_ids.txt*
+384888 10000_illumina_ids.txt
+384888 10000_illumina_ids.txt.sorted
+ 20000 10000_illumina_ids.txt.sorted.indexes
+$ ./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt | wc -c
+38846
+./htscodecs/tests/tokenise_name3 10000_illumina_ids.txt.sorted | wc -c
+22902
+```
+So far so good. Almost 16K saved, but we needed 20K to store the 10000 indices.
+How do these compress?
+```
+$ gzip -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+18436
+$ bzip2 -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+16729
+$ xz -c 10000_illumina_ids.txt.sorted.indexes | wc -c
+17704
+```
+Right. Not too well. Assuming these indices are random and they contain 10 000
+numbers that is 13.28 bits. We use 16 so optimal compression is 13.28/16 * 20 000
+= 16609. So bzip2 gets close to the optimum.
+
+22902 + 16729 = 39631. 800 bytes worse than not using this technique. (Insert
+Star Wars NOOOO here).
