@@ -1,36 +1,52 @@
 #!/usr/bin/env python3
 import string
-import struct
 import sys
 from typing import Iterator
 
 class Token:
     tok: str
-    data: bytes
+
+    def __init__(self, tok: str):
+        self.tok = tok
 
 class StringToken(Token):
-    def __init__(self, tok: str):
-        self.data = tok.encode("ascii")
+    pass
 
 class DecimalToken(Token):
-    def __init__(self, tok: str):
-        self.data = struct.pack("<I", int(tok))
+    pass
 
-class HexaDecimalToken(Token):
-    def __init__(self, tok: str):
-        self.data = struct.pack("<I", int(tok, 16))
+class ZeroDecimalToken(Token):
+    pass
 
-class PunctutationToken(StringToken):
+class UpperHexaDecimalToken(Token):
+    pass
+
+class LowerHexaDecimalToken(Token):
+    pass
+
+class ZeroUpperHexaDecimalToken(Token):
+    pass
+
+class ZeroLowerHexaDecimalToken(Token):
+    pass
+
+class PunctutationToken(Token):
     pass
 
 def classify_token(tok: str) -> Token:
     if tok.isnumeric():
+        if tok.startswith("0"):
+            return ZeroDecimalToken(tok)
         return DecimalToken(tok)
     if set(tok).issubset(set(string.hexdigits)):
-        try:
-            return HexaDecimalToken(tok)
-        except ValueError:
-            pass
+        if tok.isupper():
+            if tok.startswith("0"):
+                return ZeroUpperHexaDecimalToken(tok)
+            return UpperHexaDecimalToken(tok)
+        elif tok.islower():
+            if tok.startswith("0"):
+                return ZeroLowerHexaDecimalToken(tok)
+            return LowerHexaDecimalToken(tok)
     return StringToken(tok)
 
 def tokenize_name(name: str) -> Iterator[Token]:
@@ -55,11 +71,16 @@ def main():
             name = line.rstrip("\n")
             token_strings.append(list(tokenize_name(name)))
     it = iter(token_strings)
-    first = [type(x) for x in next(it)]
+    first = next(it)
+    length_mismatch = False
     for token_string in it:
-        token_types = [type(x) for x in token_string]
-        if first != token_types:
-            print(f"Mismatch: {first} <-> {token_types}")
+        if len(token_string) != len(first):
+            length_mismatch = True
+    if length_mismatch:
+        raise ValueError("Unequal token lengths. Codec unsuitable.")
+    token_streams = [list(row) for row in zip(*token_strings)]
+    for token_stream in token_streams:
+        print(set(type(x) for x in token_stream))
 
 if __name__ == "__main__":
     main()
