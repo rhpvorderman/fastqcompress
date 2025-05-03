@@ -59,11 +59,23 @@ def tokenize_name(name: str) -> Iterator[Tuple[int, str]]:
         yield classify_token(token), token
 
 
-def homogenize_token_stream(token_stream: List[Tuple[int, str]]):
-    combined = 0
-    for tp, token in token_stream:
-        combined |= tp
-    return [(combined, token) for tp, token in token_stream]
+class TokenStore:
+    tp: int
+    tokens: List[str]
+
+    def __init__(self, tp: int, tokens: List[str]):
+        self.tp = tp
+        self.tokens = tokens
+
+    @classmethod
+    def from_token_stream(cls, token_stream: List[tuple[int, str]]):
+        combined = 0
+        tokens = []
+        for tp, token in token_stream:
+            combined |= tp
+            tokens.append(token)
+        return cls(combined, tokens)
+
 
 
 def main():
@@ -83,8 +95,9 @@ def main():
     token_streams = [list(row) for row in zip(*token_strings)]
     for token_stream in token_streams:
         print(set(TOK_TYPE_TO_STRING[tp] for tp, token in token_stream))
-    token_streams = [homogenize_token_stream(x) for x in token_streams]
-    print([TOK_TYPE_TO_STRING[token_stream[0][0]] for token_stream in token_streams])
+    token_stores = [TokenStore.from_token_stream(token_stream)
+                    for token_stream in token_streams]
+    print([TOK_TYPE_TO_STRING[ts.tp] for ts in token_stores])
 
 
 if __name__ == "__main__":

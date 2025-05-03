@@ -6,8 +6,6 @@ import gzip
 import lzma
 from typing import Sequence, List
 
-import dnaio
-
 
 class EncodedNames:
     number_of_names: int
@@ -62,15 +60,13 @@ class EncodedColumns(EncodedNames):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("sequences", help="FASTQ or uBAM file")
+    parser.add_argument("names", help="newline separated names")
     parser.add_argument("-b", "--block-size", type=int, default=10_000)
     parser.add_argument("-e", "--encoder", default="names")
     args = parser.parse_args()
     encoder = {"names": EncodedNames, "columns": EncodedColumns}[args.encoder]
-    with dnaio.open(args.sequences) as seq_file:
-        ids = [
-            record.id for record, counter in zip(seq_file, range(args.block_size))
-        ]
+    with open(args.names, "rt") as f:
+        ids = f.read().splitlines()
     encoded_ids = encoder(ids)
     concat_ids = ''.join(ids)
     assert ids == encoded_ids.decode()
