@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import string
 import struct
+import sys
 from typing import Iterator
 
 class Token:
@@ -47,5 +48,18 @@ def tokenize_name(name: str) -> Iterator[Token]:
         yield classify_token(name[start:index])
 
 
+def main():
+    token_strings = []
+    with open(sys.argv[1], "rt") as f:
+        for line in f:
+            name = line.rstrip("\n")
+            token_strings.append(list(tokenize_name(name)))
+    it = iter(token_strings)
+    first = [type(x) for x in next(it)]
+    for token_string in it:
+        token_types = [type(x) for x in token_string]
+        if first != token_types:
+            print(f"Mismatch: {first} <-> {token_types}")
+
 if __name__ == "__main__":
-    print(list(tokenize_name("D00360:64:HBAP3ADXX:1:1114:18307:86570")))
+    main()
