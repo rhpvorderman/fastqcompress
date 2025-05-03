@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import string
 import sys
-from typing import Iterator
+from typing import List, Iterator
 
 class Token:
     tok: str
@@ -64,6 +64,34 @@ def tokenize_name(name: str) -> Iterator[Token]:
         yield classify_token(name[start:index])
 
 
+def homogenize_token_stream(token_stream: List[Token]):
+    token_set = set(type(x) for x in token_stream)
+    if len(token_set) == 1:
+        return token_stream
+    max_class = StringToken
+    if token_set.issubset({
+        LowerHexaDecimalToken,
+        ZeroLowerHexaDecimalToken,
+        DecimalToken,
+        ZeroDecimalToken,
+     }):
+        max_class = ZeroLowerHexaDecimalToken
+    if token_set.issubset({
+        UpperHexaDecimalToken,
+        ZeroUpperHexaDecimalToken,
+        DecimalToken,
+        ZeroDecimalToken,
+     }):
+        max_class = ZeroUpperHexaDecimalToken
+    if token_set == {LowerHexaDecimalToken, DecimalToken}:
+        max_class = LowerHexaDecimalToken
+    if token_set == {UpperHexaDecimalToken, DecimalToken}:
+        max_class = UpperHexaDecimalToken
+    if token_set == {ZeroDecimalToken, DecimalToken}:
+        max_class = ZeroDecimalToken
+    return [max_class(token.tok) for token in token_stream]
+
+
 def main():
     token_strings = []
     with open(sys.argv[1], "rt") as f:
@@ -79,6 +107,7 @@ def main():
     if length_mismatch:
         raise ValueError("Unequal token lengths. Codec unsuitable.")
     token_streams = [list(row) for row in zip(*token_strings)]
+    token_streams = [homogenize_token_stream(x) for x in token_streams]
     for token_stream in token_streams:
         print(set(type(x) for x in token_stream))
 
