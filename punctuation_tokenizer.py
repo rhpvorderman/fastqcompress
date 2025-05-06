@@ -116,8 +116,8 @@ class TokenStore:
             data = arr.typecode.encode("latin-1") + arr.tobytes()
             if self.tp & ZERO_PREFIX:
                 length_set = set(len(x) for x in self.tokens)
-                if len(length_set) != 0:
-                    raise ValueError("Zero prefixed numbers should all have the same formatted length.")
+                if len(length_set) != 1:
+                    raise ValueError(f"Zero prefixed numbers should all have the same formatted length. Found {length_set}")
                 formatted_length = length_set.pop()
                 data = struct.pack("B", formatted_length) + data
         else:
@@ -188,8 +188,13 @@ def main():
     if length_mismatch:
         raise ValueError("Unequal token lengths. Codec unsuitable.")
     token_streams = [list(row) for row in zip(*token_strings)]
+    print("Token types per column:", file=sys.stderr)
+    for token_stream in token_streams:
+        print(set(TOK_TYPE_TO_STRING[tok_type] for tok_type, token in token_stream), file=sys.stderr)
     token_stores = [TokenStore.from_token_stream(token_stream)
                     for token_stream in token_streams]
+    print("Homogenized token type order:", file=sys.stderr)
+    print([TOK_TYPE_TO_STRING[ts.tp] for ts in token_stores], file=sys.stderr)
     all_data = b"".join(ts.to_data() for ts in token_stores)
     sys.stdout.buffer.write(all_data)
 
