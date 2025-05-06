@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import array
 import io
 import string
@@ -173,12 +174,10 @@ class TokenStore:
         return cls(combined, tokens)
 
 
-def main():
+def compress(names: List[str]) -> bytes:
     token_strings = []
-    with open(sys.argv[1], "rt") as f:
-        for line in f:
-            name = line.rstrip("\n")
-            token_strings.append(list(tokenize_name(name)))
+    for name in names:
+        token_strings.append(list(tokenize_name(name)))
     it = iter(token_strings)
     first = next(it)
     length_mismatch = False
@@ -189,14 +188,47 @@ def main():
         raise ValueError("Unequal token lengths. Codec unsuitable.")
     token_streams = [list(row) for row in zip(*token_strings)]
     print("Token types per column:", file=sys.stderr)
+    token_sets = []
     for token_stream in token_streams:
-        print(set(TOK_TYPE_TO_STRING[tok_type] for tok_type, token in token_stream), file=sys.stderr)
+        token_sets.append(set(TOK_TYPE_TO_STRING[tok_type] for tok_type, token in token_stream))
+    print(token_sets, file=sys.stderr)
     token_stores = [TokenStore.from_token_stream(token_stream)
                     for token_stream in token_streams]
     print("Homogenized token type order:", file=sys.stderr)
     print([TOK_TYPE_TO_STRING[ts.tp] for ts in token_stores], file=sys.stderr)
     all_data = b"".join(ts.to_data() for ts in token_stores)
-    sys.stdout.buffer.write(all_data)
+    return all_data
+
+
+def decompress(data: bytes) -> Iterator[str]:
+    stream = io.BytesIO(data)
+    token_stores = []
+    while stream.tell() != len(data):
+        token_stores.append(TokenStore.from_stream(stream))
+    name_chunks = [ts.tokens for ts in token_stores]
+    for parts in zip(*name_chunks):
+        yield "".join(parts)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("names", help="File with a name on each new line, or compressed file.")
+    parser.add_argument("-d", "--decompress", action="store_true")
+    args = parser.parse_args()
+
+    if args.decompress:
+        with open(args.names, "rb") as f:
+            data = f.read()
+        for name in decompress(data):
+            print(name)
+        return
+
+    with open(args.names, "rt") as f:
+        name_block = f.read()
+    data = compress(name_block.splitlines())
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return
 
 
 if __name__ == "__main__":
