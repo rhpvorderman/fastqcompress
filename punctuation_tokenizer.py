@@ -6,12 +6,20 @@ import logging
 import string
 import struct
 import sys
-from typing import List, Iterator, Tuple
+from typing import List, Iterator, Tuple, Iterable
 
 UINT64_MAX = 0xFFFF_FFFF_FFFF_FFFF
 UINT32_MAX = 0xFFFF_FFFF
 UINT16_MAX = 0xFFFF
 UINT8_MAX = 0xFF
+INT64_MAX = 9223372036854775807
+INT32_MAX = 2147483647
+INT16_MAX = 32767
+INT8_MAX = 127
+INT64_MIN = - INT64_MAX - 1
+INT32_MIN = - INT32_MAX - 1
+INT16_MIN = - INT16_MAX - 1
+INT8_MIN = - INT8_MAX - 1
 
 UPPER =       0b0000010
 LOWER =       0b0000001
@@ -70,19 +78,58 @@ def tokenize_name(name: str) -> Iterator[Tuple[int, str]]:
 
 
 def numbers_to_array(numbers: List[int]) -> array.ArrayType:
-    assert min(numbers) >= 0
+    number_min = min(numbers)
     number_max = max(numbers)
-    if number_max > UINT64_MAX:
-        raise NotImplementedError("Numbers to big")
-    if number_max > UINT32_MAX:
-        array_type = "Q"
-    elif number_max > UINT16_MAX:
-        array_type = "I"
-    elif number_max > UINT8_MAX:
-        array_type = "H"
+    if number_min >= 0:
+        if number_max > UINT64_MAX:
+            raise NotImplementedError("Numbers to big")
+        elif number_max > UINT32_MAX:
+            array_type = "Q"
+        elif number_max > UINT16_MAX:
+            array_type = "I"
+        elif number_max > UINT8_MAX:
+            array_type = "H"
+        else:
+            array_type = "B"
     else:
-        array_type = "B"
+        if number_min < INT64_MIN or number_max > INT64_MAX:
+            raise NotImplementedError("Numbers to big")
+        elif number_min < INT32_MIN or number_max > INT32_MAX:
+            array_type = "q"
+        elif number_min < INT16_MIN or number_max > INT16_MAX:
+            array_type = "i"
+        elif number_min < INT8_MIN or number_max > INT8_MAX:
+            array_type = "h"
+        else:
+            array_type = "b"
     return array.array(array_type, numbers)
+
+
+def diffcompress(numbers: Iterable[int]) -> Iterator[Tuple[int, List[int]]]:
+    it = iter(numbers)
+    first_number = next(it)
+    previous_number = first_number
+    following_diffs = []
+    for number in it:
+        diff = number - previous_number
+        if diff < -128 or diff > 255:
+            yield first_number, following_diffs
+            first_number = number
+            following_diffs = []
+        else:
+            following_diffs.append(diff)
+        previous_number = number
+    yield first_number, following_diffs
+
+
+def diffdecompress(diffcompressed: Iterable[Tuple[int, List[int]]]) -> Iterator[int]:
+    for first_number, diffs in diffcompressed:
+        yield first_number
+        previous_number = first_number
+        for diff in diffs:
+            number = previous_number + diff
+            yield number
+            previous_number = number
 
 
 class TokenStore:
