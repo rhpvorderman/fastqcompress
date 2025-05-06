@@ -2,6 +2,7 @@
 import argparse
 import array
 import io
+import logging
 import string
 import struct
 import sys
@@ -187,15 +188,14 @@ def compress(names: List[str]) -> bytes:
     if length_mismatch:
         raise ValueError("Unequal token lengths. Codec unsuitable.")
     token_streams = [list(row) for row in zip(*token_strings)]
-    print("Token types per column:", file=sys.stderr)
     token_sets = []
     for token_stream in token_streams:
         token_sets.append(set(TOK_TYPE_TO_STRING[tok_type] for tok_type, token in token_stream))
-    print(token_sets, file=sys.stderr)
+    logging.info(f"Token types per column: {token_sets}")
     token_stores = [TokenStore.from_token_stream(token_stream)
                     for token_stream in token_streams]
-    print("Homogenized token type order:", file=sys.stderr)
-    print([TOK_TYPE_TO_STRING[ts.tp] for ts in token_stores], file=sys.stderr)
+    homogenized_token_order = [TOK_TYPE_TO_STRING[ts.tp] for ts in token_stores]
+    logging.info(f"Homogenized token type order: {homogenized_token_order}")
     all_data = b"".join(ts.to_data() for ts in token_stores)
     return all_data
 
@@ -214,8 +214,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", help="File with a name on each new line, or compressed file.")
     parser.add_argument("-d", "--decompress", action="store_true")
+    parser.add_argument("-v", "--verbose", action="count", default=0,
+                        help="If supplied will give information about the found tokens.")
     args = parser.parse_args()
-
+    logger = logging.getLogger()
+    logger.setLevel(logging.WARNING - args.verbose * 10)
     if args.decompress:
         with open(args.names, "rb") as f:
             data = f.read()
