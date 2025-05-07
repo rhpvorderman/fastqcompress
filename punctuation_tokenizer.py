@@ -6,7 +6,7 @@ import logging
 import string
 import struct
 import sys
-from typing import List, Iterator, Tuple, Iterable
+from typing import List, Iterator, Sequence, Tuple, Iterable, BinaryIO
 
 UINT64_MAX = 0xFFFF_FFFF_FFFF_FFFF
 UINT32_MAX = 0xFFFF_FFFF
@@ -21,12 +21,14 @@ INT32_MIN = - INT32_MAX - 1
 INT16_MIN = - INT16_MAX - 1
 INT8_MIN = - INT8_MAX - 1
 
-UPPER =       0b0000010
-LOWER =       0b0000001
-DECIMAL =     0b0000000
-ZERO_PREFIX = 0b0000100
+DECIMAL =      0b0000_0000
+LOWER =        0b0000_0001
+UPPER =        0b0000_0010
+ZERO_PREFIX =  0b0000_0100
+PUNCTUATION =  0b0000_1000
+DIFF_ENCODED = 0b0001_0000
 STRING = UPPER | LOWER
-PUNCTUATION = 0b0001000
+
 TOK_TYPE_TO_STRING = [
     "DECIMAL",
     "LOWERHEXADECIMAL",
@@ -77,7 +79,7 @@ def tokenize_name(name: str) -> Iterator[Tuple[int, str]]:
         yield classify_token(token), token
 
 
-def numbers_to_array(numbers: List[int]) -> array.ArrayType:
+def numbers_to_array(numbers: Sequence[int]) -> array.ArrayType:
     number_min = min(numbers)
     number_max = max(numbers)
     if number_min >= 0:
@@ -105,14 +107,18 @@ def numbers_to_array(numbers: List[int]) -> array.ArrayType:
     return array.array(array_type, numbers)
 
 
-def diffcompress(numbers: Iterable[int]) -> Iterator[Tuple[int, List[int]]]:
+def array_type_to_itemsize(array_type: str) -> int:
+    return {"B": 1, "H": 2, "I": 4, "Q": 8}[array_type.upper()]
+
+
+def diffcompress(numbers: Iterable[int]) -> Iterator[Tuple[int, Sequence[int]]]:
     it = iter(numbers)
     first_number = next(it)
     previous_number = first_number
     following_diffs = []
     for number in it:
         diff = number - previous_number
-        if diff < -128 or diff > 255:
+        if diff < 0 or diff > 255:
             yield first_number, following_diffs
             first_number = number
             following_diffs = []
@@ -122,7 +128,7 @@ def diffcompress(numbers: Iterable[int]) -> Iterator[Tuple[int, List[int]]]:
     yield first_number, following_diffs
 
 
-def diffdecompress(diffcompressed: Iterable[Tuple[int, List[int]]]) -> Iterator[int]:
+def diffdecompress(diffcompressed: Iterable[Tuple[int, Sequence[int]]]) -> Iterator[int]:
     for first_number, diffs in diffcompressed:
         yield first_number
         previous_number = first_number
@@ -130,6 +136,36 @@ def diffdecompress(diffcompressed: Iterable[Tuple[int, List[int]]]) -> Iterator[
             number = previous_number + diff
             yield number
             previous_number = number
+
+
+def pack_diff_encoding(diff_compressed: Iterable[Tuple[int, Sequence[int]]]) -> bytes:
+    stream = io.BytesIO()
+    diff_compressed = list(diff_compressed)
+    start_numbers = [start for start, diffs in diff_compressed]
+    start_array = numbers_to_array(start_numbers)
+    stream.write(struct.pack("<IB", len(start_array), ord(start_array.typecode)))
+    stream.write(start_array.tobytes())
+    diffstream = (diffs for start, diffs in diff_compressed)
+    for diffs in diffstream:
+        arr = numbers_to_array(diffs)
+        stream.write(struct.pack("<IB", len(arr), ord(arr.typecode)))
+        stream.write(arr.tobytes())
+    return stream.getvalue()
+
+
+def unpack_diff_encoding(stream: BinaryIO) -> Iterator[Tuple[int, Sequence[int]]]:
+    start_length, start_tp = struct.unpack("<IB", stream.read(5))
+    start_tp = chr(start_tp)
+    array_bytes =  array_type_to_itemsize(start_tp) * start_length
+    start_numbers = array.array(start_tp)
+    start_numbers.frombytes(stream.read(array_bytes))
+    for start in start_numbers:
+        length, tp = struct.unpack("<IB", stream.read(5))
+        array_type = chr(tp)
+        array_bytes = array_type_to_itemsize(array_type) * length
+        diffs = array.array(array_type)
+        diffs.frombytes(stream.read(array_bytes))
+        yield start, diffs
 
 
 class TokenStore:
@@ -162,7 +198,15 @@ class TokenStore:
             else:
                 numbers = [int(x, 10) for x in self.tokens]
             arr = numbers_to_array(numbers)
+            array_size = arr.itemsize * len(arr)
             data = arr.typecode.encode("latin-1") + arr.tobytes()
+            try:
+                diff_compressed_bytes = pack_diff_encoding(diffcompress(arr))
+                if array_size > len(diff_compressed_bytes):
+                    data = diff_compressed_bytes
+                    self.tp |= DIFF_ENCODED
+            except ValueError:
+                pass
             if self.tp & ZERO_PREFIX:
                 length_set = set(len(x) for x in self.tokens)
                 if len(length_set) != 1:
@@ -175,7 +219,7 @@ class TokenStore:
         return header + data
 
     @classmethod
-    def from_stream(cls, stream: io.BufferedIOBase):
+    def from_stream(cls, stream: BinaryIO):
         tp, number_stored = struct.unpack("<BI", stream.read(5))
         if tp & PUNCTUATION:
             character = stream.read(1).decode("latin-1")
@@ -193,22 +237,15 @@ class TokenStore:
         if tp & ZERO_PREFIX:
             formatted_length, = struct.unpack("B", stream.read(1))
             format_code = f"0{formatted_length}" + format_code
-        array_type = stream.read(1).decode("latin-1")
-        if array_type == "B":
-            item_size = 1
-        elif array_type == "H":
-            item_size = 2
-        elif array_type == "I":
-            item_size = 4
-        elif array_type == "Q":
-            item_size = 8
+        if tp & DIFF_ENCODED:
+            number_array = diffdecompress(unpack_diff_encoding(stream))
         else:
-            raise ValueError(f"Unrecognized array_type: {array_type}")
-        bytes_stored = number_stored * item_size
-        array_bytes = stream.read(bytes_stored)
-        number_array = array.array(array_type)
-        number_array.frombytes(array_bytes)
-
+            array_type = stream.read(1).decode("latin-1")
+            item_size = array_type_to_itemsize(array_type)
+            bytes_stored = number_stored * item_size
+            array_bytes = stream.read(bytes_stored)
+            number_array = array.array(array_type)
+            number_array.frombytes(array_bytes)
         tokens = [f"%{format_code}" % number for number in number_array]
         return cls(tp, tokens)
 
